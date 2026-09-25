@@ -18,16 +18,16 @@ public class Result<T> {
     }
 
     //+静态工厂
-    private static <T> Result<T> success(){
+    public static <T> Result<T> success(){
         return new Result<>(ResultCode.SUCCESS.getCode(),ResultCode.SUCCESS.getMessage(),null);
     }
-    private static <T> Result<T> success(T data){
+    public static <T> Result<T> success(T data){
         return new Result<>(ResultCode.SUCCESS.getCode(),ResultCode.SUCCESS.getMessage(),data);
     }
-    private static <T> Result<T> error(ResultCode resultCode){             //基于枚举，错误是系统预先定义好的标准错误
+    public static <T> Result<T> error(ResultCode resultCode){             //基于枚举，错误是系统预先定义好的标准错误
         return new Result<>(resultCode.getCode(),resultCode.getMessage(),null);
     }
-    private static <T> Result<T> error (int  code, String message){        //自定义返回错误信息
+    public static <T> Result<T> error (int  code, String message){        //自定义返回错误信息
         return new Result<>(code,message,null);
     }
 }
