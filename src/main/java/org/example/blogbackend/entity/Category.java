@@ -16,6 +16,6 @@ public class Category {
     @TableId(value = "id",type = IdType.AUTO)
     private Long id; //Long包装类可以是null,数据库对应是BIGINT
     private String name;
-    private LocalDateTime careatedAt;
+    private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
