@@ -55,6 +55,12 @@
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>3.5.17</version>
         </dependency>
+<!--        分页插件（MP 3.5.9 起分页能力独立成此模块）-->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>3.5.17</version>
+        </dependency>
 <!--        Controller声明式校验，使用注解，DTO-->
         <dependency>
             <groupId>org.springframework.boot</groupId>

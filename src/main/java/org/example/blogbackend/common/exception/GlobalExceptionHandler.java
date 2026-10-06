@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.blogbackend.common.result.Result;
 import org.example.blogbackend.common.result.ResultCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -37,6 +38,13 @@ public class GlobalExceptionHandler {
         log.warn("路径不存在：{}", e.getMessage());
         return ResponseEntity.status(ResultCode.NOT_FOUND.getCode())
                 .body(Result.error(ResultCode.NOT_FOUND));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Result<Void>> handleNotReadable(HttpMessageNotReadableException e) {
+        log.warn("请求体解析失败：{}", e.getMessage());
+        return ResponseEntity.status(ResultCode.PARAM_ERROR.getCode())
+                .body(Result.error(ResultCode.PARAM_ERROR.getCode(), "请求体格式错误"));
     }
 
     @ExceptionHandler(Exception.class)
