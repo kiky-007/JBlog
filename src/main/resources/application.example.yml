@@ -12,3 +12,50 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  data:
+    redis:
+      host: 192.168.56.43       # 改成你 VM 的 IP
+      port: 6379
+      password: ${REDIS_PASSWORD:}   # 填写你的redis密码
+      database: 0
+      timeout: 300ms              # 单条命令超时 → 决定故障时降级有多快
+      connect-timeout: 500ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 200ms
+        shutdown-timeout: 200ms
+mmybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    org.example.blogbackend.mapper: debug   # dev 看 SQL；压测时临时调成 info
+
+
+blog:
+  cache:
+    enabled: true
+    failure-threshold: 5          # 连续失败几次熔断
+    bypass-duration: 30s
+    detail-ttl: 30m
+    detail-jitter: 300s
+    null-ttl: 2m
+    lock-ttl: 3s
+    max-payload-bytes: 65536
+    view-dedupe-ttl: 25h
+    hot-rank-ttl: 8d
+    hot-list-ttl: 60s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always        # 不加这行看不到 redis 子项
