@@ -3,3 +3,4 @@
 /.idea/
 /target/
 /JBlog.iml
+/perf/*.log

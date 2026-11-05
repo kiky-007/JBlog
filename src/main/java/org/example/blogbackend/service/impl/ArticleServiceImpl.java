@@ -71,6 +71,12 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     public PageResult<ArticleListVO> pageList(Long pageNo, Long pageSize, Long categoryId, Integer status) {
         Page<Article> pageParam = new Page<>(pageNo, pageSize);  //Page是MyBatis-Plus的分页对象
         LambdaQueryWrapper<Article> wrapper = new LambdaQueryWrapper<Article>()   //查询条件
+                // 只查列表需要的字段，绝不查 content（longtext，单行约 8.5KB）
+                //  不加 select 时 MyBatis-Plus 会生成 SELECT *，深分页要把上千行正文读进内存再丢掉，
+                //  实测 68.3 ms → 28.8 ms（SQL 层）
+                .select(Article::getId, Article::getTitle, Article::getSummary,
+                        Article::getStatus, Article::getCategoryId, Article::getAuthorId,
+                        Article::getCreatedAt, Article::getUpdatedAt)
                 .eq(categoryId != null, Article::getCategoryId, categoryId)
                 .eq(status != null, Article::getStatus, status)
                 .orderByDesc(Article::getCreatedAt);

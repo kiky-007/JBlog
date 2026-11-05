@@ -1,5 +1,7 @@
 package org.example.blogbackend.common.exception;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.example.blogbackend.common.result.Result;
 import org.example.blogbackend.common.result.ResultCode;
@@ -8,6 +10,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -29,6 +32,34 @@ public class GlobalExceptionHandler {
                 .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         log.warn("参数校验失败：{}", message);
+        return ResponseEntity.status(ResultCode.PARAM_ERROR.getCode())
+                .body(Result.error(ResultCode.PARAM_ERROR.getCode(), message));
+    }
+
+    /*
+     * 方法参数校验失败（Controller 上加了 @Validated，参数上写 @Min/@Max 时走这里）
+     * 例如 GET /articles?size=100000 → 返回 400，而不是 500
+     * 注意：它和 MethodArgumentNotValidException 不是同一个异常，必须分开处理
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Result<Void>> handleConstraintViolation(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .map(ConstraintViolation::getMessage)
+                .collect(Collectors.joining("; "));
+        log.warn("参数校验失败：{}", message);
+        return ResponseEntity.status(ResultCode.PARAM_ERROR.getCode())
+                .body(Result.error(ResultCode.PARAM_ERROR.getCode(), message));
+    }
+
+    /*
+     * 参数类型不匹配，例如 GET /articles?page=abc
+     * 不加这个会掉到 Exception 分支，返回 500 —— 但这其实是用户的错，应该 400
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        String message = e.getName() + " 参数类型错误，期望 " +
+                (e.getRequiredType() == null ? "未知" : e.getRequiredType().getSimpleName());
+        log.warn("参数类型错误：{}", message);
         return ResponseEntity.status(ResultCode.PARAM_ERROR.getCode())
                 .body(Result.error(ResultCode.PARAM_ERROR.getCode(), message));
     }
