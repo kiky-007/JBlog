@@ -20,6 +20,7 @@ import org.example.blogbackend.mapper.CategoryMapper;
 import org.example.blogbackend.mapper.TagMapper;
 import org.example.blogbackend.mapper.UserMapper;
 import org.example.blogbackend.service.ArticleService;
+import org.example.blogbackend.service.cache.ArticleDetailCacheService;
 import org.example.blogbackend.vo.ArticleListVO;
 import org.example.blogbackend.vo.ArticleVO;
 import org.example.blogbackend.vo.TagVO;
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +41,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     private final UserMapper userMapper;
     private final TagMapper tagMapper;
     private final ArticleTagMapper articleTagMapper;
+    private final ArticleDetailCacheService detailCache;
 
     @Override
     @Transactional
@@ -60,11 +63,22 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
 
     @Override
     public ArticleVO getDetailById(Long id) {
+        //Cache Aside：先查缓存，命中就直接返回（0 条 SQL）
+        Optional<ArticleVO> cached = detailCache.get(id);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+
+        // 未命中：走原来的SQL
         Article article = getById(id);
         if (article == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
-        return toDetailVO(article);
+        ArticleVO vo = toDetailVO(article);
+
+        // 回填缓存（失败是静默的，不影响返回）
+        detailCache.put(id, vo);
+        return vo;
     }
 
     @Override
@@ -110,6 +124,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
 
         articleTagMapper.delete(new LambdaQueryWrapper<ArticleTag>().eq(ArticleTag::getArticleId, id));
         saveArticleTags(id, dto.getTagIds());
+
+        // 事务提交后再删缓存：提交前删会被并发读把旧值重新写回去
+        detailCache.evictAfterCommit(id);
+
         return toDetailVO(getById(id));
     }
 
@@ -121,6 +139,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         }
         articleTagMapper.delete(new LambdaQueryWrapper<ArticleTag>().eq(ArticleTag::getArticleId, id));
         removeById(id);
+
+        //  缓存必须失效，否则删掉的文章还能从缓存里读出来
+        detailCache.evictAfterCommit(id);
     }
 
     /*校验分类、作者、标签是否存在*/

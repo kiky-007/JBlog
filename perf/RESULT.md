@@ -277,6 +277,77 @@
 
 ---
 
+## 4.1 M2 详情缓存（Cache Aside）
+
+### 实现要点
+
+| 项 | 做法 | 理由 |
+|---|---|---|
+| 读路径 | 先 `CacheStore.get`，未命中再查库并回填 | Cache Aside 标准写法 |
+| 写路径 | 事务 `afterCommit` 里 `delete` 缓存 | 提交前删会被并发读把旧值回填 |
+| 序列化 | Spring 注入的 `ObjectMapper` | 已注册 `JavaTimeModule`，`LocalDateTime` 才不会变成数组 |
+| 反序列化失败 | 当作未命中，走数据库 | 改过 VO 字段后 Redis 里的旧 JSON 不会让接口 500 |
+| 负载上限 | 超过 `maxPayloadBytes`(64KB) 跳过回填 | 防大对象撑爆 Redis |
+| TTL | `detailTtl`(30m) + 随机 `detailJitter`(0~300s) | 打散过期时间，防雪崩 |
+
+新增文件：`src/main/java/org/example/blogbackend/service/cache/ArticleDetailCacheService.java`
+
+### 实测验收（`perf/verify-m2.ps1`）
+
+| 检查项 | 结果 |
+|---|---|
+| health.redis | **UP**，version 8.10.3 |
+| 未命中批次（30 次，只有第 1 次查库） | 7.0 ms/次，平均 **0.30 条 SQL**（= 5/30 + MySQL 内部语句） |
+| 命中批次（30 次，全部命中） | 6.9 ms/次，平均 **0.13 条 SQL** |
+| 单次冷请求 SQL | 9 条（5 条业务 SQL + 4 条 MySQL/CLI 自身语句） |
+| 两次响应内容 | 完全一致 |
+| Redis key | `blog:v1:article:detail:49170`，type=string，STRLEN=8873 字节 |
+| **TTL** | **1927 ~ 2080 秒**（落在 1800~2100 预期区间） |
+| 命中率指标 | hit=226，miss=8，**命中率 96.6%** |
+| **PUT 后缓存失效** | `EXISTS=0`（已删除），再 GET 读到**新标题** |
+
+### M2 并发压测（`k6 run perf\detail-baseline.js`，10 VUs × 75s，随机 id）
+
+| 轮次 | p50 | p95 | p99 | QPS |
+|---|---|---|---|---|
+| 第 1 轮 | 32.44 ms | 62.60 ms | 74.76 ms | 279.2 |
+| 第 2 轮 | 27.74 ms | 52.51 ms | 72.69 ms | 327.5 |
+| 第 3 轮 | 28.40 ms | 46.22 ms | 56.97 ms | 331.5 |
+| **中位数** | **28.40 ms** | **52.51 ms** | **72.69 ms** | **327.5** |
+
+**与基线 B 对比**：
+
+| 指标 | 基线 B（M1，无缓存） | M2（有缓存） | 变化 |
+|---|---|---|---|
+| 详情 p95 | 68.40 ms | **52.51 ms** | **-23%** |
+| 详情 QPS | 191 | **327** | **+71%** |
+| 每请求 SQL | 5.00 条 | **0.13 条** | **-97%** |
+
+> **为什么 p95 只降了 23%，而不是降到几毫秒？**
+> 因为 k6 用**随机 id** 打 10000 篇文章，10 个虚拟用户 × 75 秒 ≈ 24000 次请求，
+> 平均每篇被访问 ~2.4 次，**命中率约 96%**（实测 hit/miss 指标也是 96.6%）。
+> 剩下的 4% 未命中仍然要打 5 条 SQL，而且这 4% 恰好落在 p99 尾巴上。
+>
+> **更关键的是：瓶颈已经从数据库转移到了应用层。**
+> 单机串行请求只要 6.9 ms，但 10 并发下 p50 就涨到 28 ms ——
+> 说明现在的限制是 Tomcat 线程调度、JSON 序列化、k6 客户端自身，**不再是 MySQL**。
+> 这正好是「缓存把数据库压力转移走」的证据，也是下一步该压多少并发才会真崩的起点。
+
+### 踩过的坑（值得记）
+
+1. **`${REDIS_PASSWORD:}` 空值连不上**：yml 里这个写法表示"没设就用空字符串"，
+   而 Redis 有 `requirepass`，空密码会返回 `NOAUTH`。
+   环境变量只对**当前进程**有效，`setx` 之后必须重开终端/IDEA。
+2. **`Invoke-RestMethod` 会被系统代理拦截**：本机 `127.0.0.1:10808` 的代理
+   会把 `localhost` 请求也转发出去，导致"应用没起来"的假象。
+   解决：`[System.Net.WebRequest]::DefaultWebProxy = [System.Net.GlobalSelection]::GetEmptyWebProxy()`。
+3. **PowerShell 5.1 读无 BOM 的 UTF-8 脚本会解析失败**：中文注释被按 GBK 解码，
+   报"缺少 }"。解决：给 `.ps1` 加 UTF-8 BOM。
+4. **`Questions` 计数器含 CLI 自己的语句**：单次请求测出来是 9 条而不是 5 条，
+   因为 `SHOW GLOBAL STATUS` 本身也计数。必须**批量请求取平均**才有意义。
+
+---
+
 ## 5. 故障演练记录
 
 | 时间 | 操作 | 现象 | 结论 |
